@@ -56,6 +56,7 @@ from tabpfn.downsample_correction import (
     apply_class_weights,
     context_class_prior,
     downsample_class_weights,
+    warn_downsample_prior_correction_once,
 )
 from tabpfn.errors import handle_oom_errors
 from tabpfn.inference import (
@@ -905,6 +906,7 @@ class TabPFNClassifier(ClassifierMixin, BaseEstimator):
         self.downsample_correction_weights_ = downsample_class_weights(
             train_counts, context_prior
         )
+        warn_downsample_prior_correction_once(task_type="classification")
 
     def _uses_majority_downsample(self) -> bool:
         """Whether the configured row sampler is majority downsampling."""

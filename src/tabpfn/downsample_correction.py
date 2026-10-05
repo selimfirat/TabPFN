@@ -18,10 +18,16 @@ depend on how many context rows happened to land in a bar.
 
 from __future__ import annotations
 
+import warnings
+from importlib.metadata import (
+    PackageNotFoundError,
+    version as get_package_version,
+)
 from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
+from packaging.version import InvalidVersion, Version
 
 if TYPE_CHECKING:
     from tabpfn.architectures.shared.bar_distribution import (
@@ -148,3 +154,64 @@ def temper_and_correct_logits(
     if log_weights is not None:
         logits = logits + log_weights.to(device=logits.device, dtype=logits.dtype)
     return logits
+
+
+_WARNING_STATE: dict[str, bool] = {"warned": False}
+
+
+def reset_downsample_correction_warning() -> None:
+    """Reset the one-time warning flag (used for testing)."""
+    _WARNING_STATE["warned"] = False
+
+
+def _is_resolved_version() -> bool:
+    try:
+        ver = Version(get_package_version("tabpfn"))
+        return ver >= Version("10.0.0")
+    except (PackageNotFoundError, InvalidVersion):
+        return False
+
+
+def warn_downsample_prior_correction_once(*, task_type: str = "classification") -> None:
+    """Warn once when majority_downsample prior shift correction activates.
+
+    Active on large data until a reasonable new version (e.g. < 10.0.0) provides
+    explicit threshold alignment or an opt-out configuration.
+    """
+    if _WARNING_STATE["warned"]:
+        return
+
+    if _is_resolved_version():
+        return
+
+    _WARNING_STATE["warned"] = True
+
+    if task_type == "classification":
+        warnings.warn(
+            "SAMPLE_SUBSAMPLING_METHOD='majority_downsample' has activated "
+            "target prior shift correction on this dataset (introduced in "
+            "TabPFN 9.1.0). This rescales predicted probabilities by "
+            "(π_train / π_context). For imbalanced datasets, this may "
+            "severely suppress minority class probabilities and drop capture "
+            "rate (recall) under the default 0.5 decision threshold. To restore "
+            "pre-9.1.0 uncorrected probabilities, set "
+            "`model.downsample_correction_weights_ = None` after fit(), or "
+            "tune decision thresholds via `tuning_config={"
+            "'tune_decision_thresholds': True, 'eval_metric': "
+            "'balanced_accuracy'}`. (This warning is active until a reasonable "
+            "new version resolves threshold alignment).",
+            UserWarning,
+            stacklevel=3,
+        )
+    else:
+        warnings.warn(
+            "SAMPLE_SUBSAMPLING_METHOD='majority_downsample' has activated "
+            "target prior shift correction on this dataset (introduced in "
+            "TabPFN 9.1.0). This adds bucket log-weights to regression logits "
+            "to match the training distribution. To restore pre-9.1.0 behavior, "
+            "set `model.downsample_correction_log_weights_ = None` after fit(). "
+            "(This warning is active until a reasonable new version resolves "
+            "threshold alignment).",
+            UserWarning,
+            stacklevel=3,
+        )

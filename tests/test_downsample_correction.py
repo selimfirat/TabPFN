@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
 import torch
@@ -18,6 +20,7 @@ from tabpfn.downsample_correction import (
     context_class_prior,
     downsample_bucket_log_weights,
     downsample_class_weights,
+    reset_downsample_correction_warning,
     temper_and_correct_logits,
 )
 from tabpfn.finetuning.data_util import (
@@ -646,3 +649,36 @@ def test__regressor__fit_from_preprocessed_clears_stale_correction():
         out = reg.forward(batch.X_query)
         outputs.append((out[0] if isinstance(out, tuple) else out).detach())
     torch.testing.assert_close(outputs[0], outputs[1])
+
+
+# --------------------------------------------------------------------------- #
+# Warning tests
+# --------------------------------------------------------------------------- #
+
+
+def test__classifier__majority_downsample_warns_once_on_large_data():
+    reset_downsample_correction_warning()
+    X, y = _imbalanced_classification(n_majority=450, n_minority=50)
+
+    # 1. Fits on large data with majority downsampling -> emits warning
+    with pytest.warns(UserWarning, match="target prior shift correction"):
+        clf = _downsampling_classifier().fit(X, y)
+    assert clf.downsample_correction_weights_ is not None
+
+    # 2. Subsequent fit does NOT emit warning again (warn once)
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        _downsampling_classifier().fit(X, y)
+    # Check that no target prior shift warning was recorded on subsequent fit
+    assert not any("target prior shift correction" in str(w.message) for w in record)
+
+
+def test__classifier__majority_downsample_does_not_warn_on_small_data():
+    reset_downsample_correction_warning()
+    # Data size (20) <= subsample_size (100): no rows dropped, no shift
+    X, y = _imbalanced_classification(n_majority=18, n_minority=2)
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        clf = _downsampling_classifier().fit(X, y)
+    assert clf.downsample_correction_weights_ is None
+    assert not any("target prior shift correction" in str(w.message) for w in record)

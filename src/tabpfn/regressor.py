@@ -60,6 +60,7 @@ from tabpfn.constants import (
 from tabpfn.downsample_correction import (
     downsample_bucket_log_weights,
     temper_and_correct_logits,
+    warn_downsample_prior_correction_once,
 )
 from tabpfn.errors import TabPFNValidationError, handle_oom_errors
 from tabpfn.inference import (
@@ -1060,6 +1061,7 @@ class TabPFNRegressor(RegressorMixin, BaseEstimator):
             row_inclusion_probabilities=probabilities,
             unobserved_target_probability=unobserved_probability,
         )
+        warn_downsample_prior_correction_once(task_type="regression")
 
     def _uses_majority_downsample(self) -> bool:
         """Whether the configured row sampler is majority downsampling."""
